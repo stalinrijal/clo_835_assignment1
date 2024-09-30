@@ -1,3 +1,3 @@
-instance_type = "t2.micro"
-linux_ami_id = ""
-public_subnet = "value"
+instance_type = "t3.micro"
+linux_ami_id = "ami-0ebfd941bbafe70c6"
+public_subnet = "subnet-008e7753f820e5099"
