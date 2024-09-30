@@ -1,0 +1,77 @@
+name: Build, Push to ECR, and Deploy MySQL and Web App to EC2
+
+on:
+  push:
+    branches:
+      - main  
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: dev  
+
+    steps:
+      # Step 1: Checkout the repository code
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # Step 2: Log in to AWS ECR
+      - name: Log in to AWS ECR
+        env:
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+        run: |
+          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin 251298034216.dkr.ecr.$AWS_REGION.amazonaws.com
+
+      # Step 3: Build the MySQL Docker image
+      - name: Build MySQL Docker Image
+        run: |
+          docker build -t mysql-image -f mysql.Dockerfile .
+
+      # Step 4: Tag and Push the MySQL Docker image
+      - name: Tag and Push MySQL Image to ECR
+        run: |
+          docker tag mysql-image:latest 251298034216.dkr.ecr.us-east-1.amazonaws.com/mysql-image:latest
+          docker push 251298034216.dkr.ecr.us-east-1.amazonaws.com/mysql-image:latest
+
+      # Step 5: Build the Web App Docker image
+      - name: Build Web App Docker Image
+        run: |
+          docker build -t webapp-image -f Dockerfile .
+
+      # Step 6: Tag and Push the Web App Docker image
+      - name: Tag and Push Web App Image to ECR
+        run: |
+          docker tag webapp-image:latest 251298034216.dkr.ecr.us-east-1.amazonaws.com/webapp-image:latest
+          docker push 251298034216.dkr.ecr.us-east-1.amazonaws.com/webapp-image:latest
+
+      # Step 7: Deploy MySQL and Web App Images to EC2 with Docker Network
+      - name: Deploy to EC2
+        env:
+          AWS_REGION: us-east-1
+          EC2_IP: 3.85.45.147  # Your EC2 instance IP address
+        run: |
+          ssh -i ${{ secrets.EC2_PRIVATE_KEY }} -o StrictHostKeyChecking=no ec2-user@${{ env.EC2_IP }} << 'EOF'
+            # Step 1: Create a common Docker network
+            docker network create app-network || true
+
+            # Step 2: Log in to AWS ECR
+            docker login --username AWS --password $(aws ecr get-login-password --region $AWS_REGION) 251298034216.dkr.ecr.$AWS_REGION.amazonaws.com
+
+            # Step 3: Pull MySQL Image from ECR and Run it
+            docker pull 251298034216.dkr.ecr.$AWS_REGION.amazonaws.com/mysql-image:latest
+            docker stop mysql-container || true
+            docker rm mysql-container || true
+            docker run -d --name mysql-container --network app-network -e MYSQL_ROOT_PASSWORD=password -e MYSQL_DATABASE=employees mysql-image:latest
+
+            # Step 4: Pull Web App Image from ECR and Run it
+            docker pull 251298034216.dkr.ecr.$AWS_REGION.amazonaws.com/webapp-image:latest
+            docker stop webapp-container || true
+            docker rm webapp-container || true
+            docker run -d --name webapp-container --network app-network -p 80:80 webapp-image:latest
+
+            # Step 5: Verify both containers are running and reachable
+            docker ps
+          EOF
