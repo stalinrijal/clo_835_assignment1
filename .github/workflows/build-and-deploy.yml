@@ -70,24 +70,64 @@ jobs:
             sudo usermod -aG docker ec2-user
             sudo systemctl restart docker
 
-            # Step 3: Create a common Docker network
-            docker network create app-network || true
+            # Step 3: Create a custom Docker network
+            docker network create --driver bridge my_custom_network || true
 
             # Step 4: Log in to AWS ECR
             aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 251298034216.dkr.ecr.us-east-1.amazonaws.com
 
-            # Step 5: Pull MySQL Image from ECR and Run it
+            # Step 5: Pull MySQL and Web App Images from ECR
             docker pull 251298034216.dkr.ecr.us-east-1.amazonaws.com/ecr_for_assignment1:mysql-image
+            docker pull 251298034216.dkr.ecr.us-east-1.amazonaws.com/ecr_for_assignment1:webapp-image
+
+            # Step 6: Run MySQL container
             docker stop mysql-container || true
             docker rm mysql-container || true
-            docker run -d --name mysql-container --network app-network -e MYSQL_ROOT_PASSWORD=password -e MYSQL_DATABASE=employees 251298034216.dkr.ecr.us-east-1.amazonaws.com/ecr_for_assignment1:mysql-image
+            docker run -d --name mysql-container --network my_custom_network \
+              -e MYSQL_ROOT_PASSWORD=password \
+              -e MYSQL_DATABASE=employees \
+              251298034216.dkr.ecr.us-east-1.amazonaws.com/ecr_for_assignment1:mysql-image
 
-            # Step 6: Pull Web App Image from ECR and Run it
-            docker pull 251298034216.dkr.ecr.us-east-1.amazonaws.com/ecr_for_assignment1:webapp-image
-            docker stop webapp-container || true
-            docker rm webapp-container || true
-            docker run -d --name webapp-container --network app-network -p 80:80 251298034216.dkr.ecr.us-east-1.amazonaws.com/ecr_for_assignment1:webapp-image
+            # Step 7: Run three web app containers with different colors and ports
+            docker stop app-pink || true
+            docker rm app-pink || true
+            docker run -d --name app-pink \
+              --network my_custom_network \
+              -p 8082:8080 \
+              -e DBHOST=mysql-container \
+              -e DBUSER=root \
+              -e DBPWD=password \
+              -e DATABASE=employees \
+              -e APP_COLOR=pink \
+              -e DBPORT=3306 \
+              251298034216.dkr.ecr.us-east-1.amazonaws.com/ecr_for_assignment1:webapp-image
 
-            # Step 7: Verify both containers are running and reachable
+            docker stop app-blue || true
+            docker rm app-blue || true
+            docker run -d --name app-blue \
+              --network my_custom_network \
+              -p 8081:8080 \
+              -e DBHOST=mysql-container \
+              -e DBUSER=root \
+              -e DBPWD=password \
+              -e DATABASE=employees \
+              -e APP_COLOR=blue \
+              -e DBPORT=3306 \
+              251298034216.dkr.ecr.us-east-1.amazonaws.com/ecr_for_assignment1:webapp-image
+
+            docker stop app-lime || true
+            docker rm app-lime || true
+            docker run -d --name app-lime \
+              --network my_custom_network \
+              -p 8083:8080 \
+              -e DBHOST=mysql-container \
+              -e DBUSER=root \
+              -e DBPWD=password \
+              -e DATABASE=employees \
+              -e APP_COLOR=lime \
+              -e DBPORT=3306 \
+              251298034216.dkr.ecr.us-east-1.amazonaws.com/ecr_for_assignment1:webapp-image
+
+            # Step 8: Verify containers are running
             docker ps
           EOF
